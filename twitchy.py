@@ -1,24 +1,19 @@
-import re
-import os
-import json
-import warnings
-import HTMLParser
+import re, os, json, warnings, praw, requests, OAuth2Util, configparser
+from html.parser import HTMLParser
 from random import shuffle
 from StringIO import StringIO
-
-
-import praw
-import requests
 from PIL import Image
 
-from config import username, password, subreddit
+cfg = configparser.ConfigParser()
+cfg.read("config.ini")
+subreddit = cfg["settings"]["subreddit"]
 
 def chunker(seq, size):
     return (seq[pos:pos + size] for pos in xrange(0, len(seq), size))
 
 class configuration():
     def __init__(self):
-        self.r, self.subreddit = self.reddit_setup()
+        self.r, self.subreddit = self.reddit_setup(subreddit)
         self.config = self.get_config()
         self.streams = self.wikipage_check(self.config["wikipages"]["stream_list"])
         self.banned = self.bans()
@@ -36,12 +31,12 @@ class configuration():
             try:
                 config = json.loads(config)
             except ValueError:
-                print "No JSON object could be found, or the config page has broken JSON.\nUse www.jsonlint.com to validate your wiki config page."
+                print("No JSON object could be found, or the config page has broken JSON.\nUse www.jsonlint.com to validate your wiki config page.")
                 self.wikilog("No JSON object could be decoded from twitchbot config wiki page.")
                 raise
             return HTMLParser.HTMLParser().unescape(config)
         except requests.exceptions.HTTPError:
-            print "Couldn't access config wiki page, reddit may be down."
+            print("Couldn't access config wiki page, reddit may be down.")
             self.config = {"wikipages":{"error_log":"twitchbot_error_log"}}
             self.wikilog("Couldn't access config wiki page, reddit may be down.")
             raise
@@ -49,19 +44,21 @@ class configuration():
     def wikilog(self, error):
         self.r.edit_wiki_page(self.subreddit, self.config["wikipages"]["error_log"], error, error)
 
-    def reddit_setup(self):
-        print "Logging in"
-        r = praw.Reddit("Sidebar livestream updater for /r/{} by /u/andygmb ".format(subreddit))
-        r.login(username=username, password=password, disable_warning=True)
+    def reddit_Setup(subreddit):
+        print("Connecting to reddit.")
+        user_agent = "Sidebar livestream updater for /r/{} by /u/andygmb, updated by /u/Lil_Jening".format(subreddit)
+        r= praw.Reddit(user_agent=user_agent)
+        o= OAuth2Util.OAuth2Util(r)
+        # Automatic refreshing the OAuth2 key
+        o.refresh(force=True)
         sub = r.get_subreddit(subreddit)
         return r, sub
-
     def wikipage_check(self, wikipage):
         try:
             wiki_list = self.r.get_wiki_page(self.subreddit, wikipage).content_md.splitlines()
             results = [item.lower() for item in wiki_list if len(item)]
         except requests.exceptions.HTTPError:
-            print "No wikipage found at http://www.reddit.com/r/{}/wiki/{}".format(self.subreddit.display_name, wikipage)
+            print("No wikipage found at http://www.reddit.com/r/{}/wiki/{}".format(self.subreddit.display_name, wikipage))
             self.wikilog("Couldn't access wikipage at /wiki/{}/".format(wikipage))
             results = []
         return results
@@ -70,7 +67,7 @@ class configuration():
         if self.config["accept_messages"].lower() not in ["false", "no", "n"]:
             streams = []
             inbox = self.r.get_inbox()
-            print "Checking inbox for new messages"
+            print("Checking inbox for new messages")
             for message in inbox:
                 if message.new \
                         and message.subject == "Twitch.tv request /r/{}".format(self.subreddit):
@@ -83,12 +80,12 @@ class configuration():
                             stream_name = re_result.group(1).lower()
                         # extract the username stored in regex group 1
                         else:
-                            print "Could not find stream name in message."
+                            print("Could not find stream name in message.")
                             continue # skip to next message
                     except ValueError:
                         message.mark_as_read()
                         stream_name = "null"
-                        print "Could not find stream name in message."
+                        print("Could not find stream name in message.")
 
                     if "twitch.tv/" in message_content \
                             and len(stream_name) <=25 \
@@ -115,15 +112,15 @@ class configuration():
                     reason="Adding stream(s): " + ", ".join(new_streams)
                 )
         else:
-            print "Skipping inbox check as accept_messages config is set to False."
+            print("Skipping inbox check as accept_messages config is set to False.")
             pass
 
     def update_stylesheet(self):
-        print "Uploading thumbnail image(s)"
+        print("Uploading thumbnail image(s)")
         try:
             self.subreddit.upload_image("img.png", self.config["image_upload_name"].encode("utf-8"), False)
         except praw.errors.APIException:
-            print "Too many images uploaded."
+            print("Too many images uploaded.")
             self.wikilog("Too many images uploaded to the stylesheet, max of 50 images allowed.")
             raise
         stylesheet = self.r.get_stylesheet(self.subreddit)
@@ -138,12 +135,12 @@ class configuration():
             start = content.index(start_marker)
             end = content.index(end_marker) + len(end_marker)
         except ValueError:
-            print "Couldn't find the stream markers in /wiki/{}".format(self.config["wikipages"]["stream_location"])
+            print("Couldn't find the stream markers in /wiki/{}".format(self.config["wikipages"]["stream_location"]))
             self.wikilog("Couldn't find the stream markers in /wiki/{}".format(self.config["wikipages"]["stream_location"]))
             raise
         livestreams_string = "".join([stream["stream_output"] for stream in livestreams.streams])
         if content[start:end] != "{}\n\n{}\n\n{}".format(start_marker,livestreams_string,end_marker):
-            print "Updating sidebar"
+            print("Updating sidebar")
             content = content.replace(
                 content[start:end],
                 "{}\n\n{}\n\n{}".format(start_marker,livestreams_string,end_marker)
@@ -151,12 +148,12 @@ class configuration():
             try:
                 self.r.edit_wiki_page(self.subreddit, self.config["wikipages"]["stream_location"], content.decode("utf-8"), reason="Updating livestreams")
             except praw.errors.Forbidden:
-                print "Maximum amount of characters (5120) reached. Please consider reducing your sidebars character limit or changing your max_streams_displayed in /wiki/twitchbot_config."
+                print("Maximum amount of characters (5120) reached. Please consider reducing your sidebars character limit or changing your max_streams_displayed in /wiki/twitchbot_config.")
                 self.wikilog("Maximum amount of characters (5120) reached. Please consider reducing your sidebars character limit or changing your max_streams_displayed in /wiki/twitchbot_config.")
                 raise
             return True
         else:
-            print "The stream content is exactly the same as what is already on https://www.reddit.com/r/{}/wiki/{}. Skipping update.".format(self.subreddit, self.config["wikipages"]["stream_location"])
+            print("The stream content is exactly the same as what is already on https://www.reddit.com/r/{}/wiki/{}. Skipping update.".format(self.subreddit, self.config["wikipages"]["stream_location"]))
             return False
 
     def sort_streams(self, streams):
@@ -180,7 +177,7 @@ class configuration():
                 bans.append(stream)
                 self.streams.remove(stream)
         if bans:
-            print "Removing banned stream(s): " + ", ".join(bans)
+            print("Removing banned stream(s): " + ", ".join(bans))
             self.subreddit.edit_wiki_page(
                 self.config["wikipages"]["stream_list"],
                 "\n".join(self.streams),
@@ -198,9 +195,9 @@ class livestreams():
         max_streams = int(self.config.config["max_streams_displayed"])
         if len(self.streams) > max_streams:
             self.streams = self.streams[:max_streams]
-            print "There are more than {max_stream_count} streams currently \
+            print("There are more than {max_stream_count} streams currently \
 			- the amount displayed has been reduced to {max_stream_count}. \
-			You can increase this in your /wiki/twitchbot_config.".format(max_stream_count=max_streams)
+			You can increase this in your /wiki/twitchbot_config.".format(max_stream_count=max_streams))
         if len(self.streams):
             self.streams = self.config.sort_streams(self.streams)
             for index, stream in enumerate(self.streams):
@@ -211,7 +208,7 @@ class livestreams():
             return False
 
     def get_livestreams(self):
-        print "Requesting stream info"
+        print("Requesting stream info")
         for chunk in chunker(self.config.streams, 100):
             api_link = "https://api.twitch.tv/kraken/streams?channel="
             for stream in chunk:
@@ -227,7 +224,7 @@ class livestreams():
 
 
     def parse_stream_info(self, data):
-        print "Parsing stream info"
+        print("Parsing stream info")
         allowed_games = [str(game.lower()) for game in self.config.config["allowed_games"]]
         for streamer in data["streams"]:
             if not len(allowed_games) or streamer["game"].lower() in allowed_games:
@@ -249,7 +246,7 @@ class livestreams():
                     pass
 
     def create_spritesheet(self):
-        print "Creating image spritesheet"
+        print("Creating image spritesheet")
         width, height = (
         int(self.config.config["thumbnail_size"]["width"]),
         int(self.config.config["thumbnail_size"]["height"])

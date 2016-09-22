@@ -1,3 +1,10 @@
+Fork Notes:
+===============
+
+Hey guys Lil-Jening here, I have noticed that Twitch put into effect a change to their API telling all users to create and use CLIENT_IDs whenever they send their requests. So I looked and saw that this bot needed to be upgraded. After looking though the code I saw that I could update the bot even more. 
+So by the time I get a release candidate ready I should have a script that will connect to twitch and get a list of live users playing a specified game. The bot will be updated to support OAuth2 authentication. And Updated for Python 3.5. Thanks :D
+
+
 twitchy_the_bot
 ===============
 

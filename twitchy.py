@@ -1,7 +1,6 @@
-import re, os, json, warnings, praw, requests, OAuth2Util, configparser
-from html.parser import HTMLParser
+import re, os, json, warnings, praw, requests, OAuth2Util, configparser, html
+from io import StringIO
 from random import shuffle
-from StringIO import StringIO
 from PIL import Image
 
 cfg = configparser.ConfigParser()
@@ -9,7 +8,7 @@ cfg.read("config.ini")
 subreddit = cfg["settings"]["subreddit"]
 
 def chunker(seq, size):
-    return (seq[pos:pos + size] for pos in xrange(0, len(seq), size))
+    return (seq[pos:pos + size] for pos in range(0, len(seq), size))
 
 class configuration():
     def __init__(self):
@@ -34,7 +33,7 @@ class configuration():
                 print("No JSON object could be found, or the config page has broken JSON.\nUse www.jsonlint.com to validate your wiki config page.")
                 self.wikilog("No JSON object could be decoded from twitchbot config wiki page.")
                 raise
-            return HTMLParser.HTMLParser().unescape(config)
+            return html.unescape(config)
         except requests.exceptions.HTTPError:
             print("Couldn't access config wiki page, reddit may be down.")
             self.config = {"wikipages":{"error_log":"twitchbot_error_log"}}
@@ -44,7 +43,7 @@ class configuration():
     def wikilog(self, error):
         self.r.edit_wiki_page(self.subreddit, self.config["wikipages"]["error_log"], error, error)
 
-    def reddit_Setup(subreddit):
+    def reddit_setup(self, subreddit):
         print("Connecting to reddit.")
         user_agent = "Sidebar livestream updater for /r/{} by /u/andygmb, updated by /u/Lil_Jening".format(subreddit)
         r= praw.Reddit(user_agent=user_agent)
@@ -124,7 +123,7 @@ class configuration():
             self.wikilog("Too many images uploaded to the stylesheet, max of 50 images allowed.")
             raise
         stylesheet = self.r.get_stylesheet(self.subreddit)
-        stylesheet = HTMLParser.HTMLParser().unescape(stylesheet["stylesheet"])
+        stylesheet = html.unescape(stylesheet["stylesheet"])
         self.subreddit.set_stylesheet(stylesheet)
 
     def update_sidebar(self):
@@ -139,11 +138,11 @@ class configuration():
             self.wikilog("Couldn't find the stream markers in /wiki/{}".format(self.config["wikipages"]["stream_location"]))
             raise
         livestreams_string = "".join([stream["stream_output"] for stream in livestreams.streams])
-        if content[start:end] != "{}\n\n{}\n\n{}".format(start_marker,livestreams_string,end_marker):
+        if content[start:end] != "{0}\n\n{1}\n\n{2}".format(start_marker,livestreams_string,end_marker):
             print("Updating sidebar")
             content = content.replace(
                 content[start:end],
-                "{}\n\n{}\n\n{}".format(start_marker,livestreams_string,end_marker)
+                "{0}\n\n{1}\n\n{2}".format(start_marker,livestreams_string,end_marker)
             )
             try:
                 self.r.edit_wiki_page(self.subreddit, self.config["wikipages"]["stream_location"], content.decode("utf-8"), reason="Updating livestreams")
@@ -239,7 +238,7 @@ class livestreams():
                     display_name = re.sub(r'[*)(>/#\[\]\\]*', '', streamer["channel"]["display_name"]).replace("\n", "").encode("utf-8")
                     viewercount = "{:,}".format(streamer["viewers"])
                     self.streams.append({
-                        "stream_output":HTMLParser.HTMLParser().unescape(self.config.config["string_format"].encode("utf-8").format(name=name, title=title, viewercount=viewercount, display_name=display_name, game=game, index="{index}")),
+                        "stream_output":html.unescape(self.config.config["string_format"].encode("utf-8").format(name=name, title=title, viewercount=viewercount, display_name=display_name, game=game, index="{index}")),
                         "json_data":streamer
                     })
                 except KeyError:

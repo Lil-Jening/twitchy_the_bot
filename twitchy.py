@@ -6,6 +6,7 @@ from PIL import Image
 cfg = configparser.ConfigParser()
 cfg.read("config.ini")
 subreddit = cfg["settings"]["subreddit"]
+clientID = cfg["settings"]["clientID"]
 
 def chunker(seq, size):
     return (seq[pos:pos + size] for pos in range(0, len(seq), size))
@@ -127,9 +128,9 @@ class configuration():
         self.subreddit.set_stylesheet(stylesheet)
 
     def update_sidebar(self):
-        content = self.r.get_wiki_page(self.subreddit, self.config["wikipages"]["stream_location"]).content_md.encode('utf-8')
-        start_marker = self.config["stream_marker_start"].encode("utf-8")
-        end_marker = self.config["stream_marker_end"].encode("utf-8")
+        content = self.r.get_wiki_page(self.subreddit, self.config["wikipages"]["stream_location"]).content_md#.encode('utf-8')
+        start_marker = self.config["stream_marker_start"]#.encode("utf-8")
+        end_marker = self.config["stream_marker_end"]#.encode("utf-8")
         try:
             start = content.index(start_marker)
             end = content.index(end_marker) + len(end_marker)
@@ -138,14 +139,16 @@ class configuration():
             self.wikilog("Couldn't find the stream markers in /wiki/{}".format(self.config["wikipages"]["stream_location"]))
             raise
         livestreams_string = "".join([stream["stream_output"] for stream in livestreams.streams])
-        if content[start:end] != "{0}\n\n{1}\n\n{2}".format(start_marker,livestreams_string,end_marker):
+        contentStreams = "{0}\n\n{1}\n\n{2}".format(start_marker,livestreams_string,end_marker)
+        if content[start:end] != contentStreams:
             print("Updating sidebar")
             content = content.replace(
                 content[start:end],
-                "{0}\n\n{1}\n\n{2}".format(start_marker,livestreams_string,end_marker)
+                contentStreams
             )
+            print("Content output:" + content)
             try:
-                self.r.edit_wiki_page(self.subreddit, self.config["wikipages"]["stream_location"], content.decode("utf-8"), reason="Updating livestreams")
+                self.r.edit_wiki_page(self.subreddit, self.config["wikipages"]["stream_location"], content, reason="Updating livestreams")
             except praw.errors.Forbidden:
                 print("Maximum amount of characters (5120) reached. Please consider reducing your sidebars character limit or changing your max_streams_displayed in /wiki/twitchbot_config.")
                 self.wikilog("Maximum amount of characters (5120) reached. Please consider reducing your sidebars character limit or changing your max_streams_displayed in /wiki/twitchbot_config.")
@@ -209,10 +212,13 @@ class livestreams():
     def get_livestreams(self):
         print("Requesting stream info")
         for chunk in chunker(self.config.streams, 100):
-            api_link = "https://api.twitch.tv/kraken/streams?channel="
+            api_link = "https://api.twitch.tv/kraken/streams?client_id={0}".format(clientID)
+            print(api_link)
             for stream in chunk:
-                api_link += stream + ","
+                fixedGame = requests.get(api_link, params=stream)
             try:
+                fixedGame = requests.get(api_link, params=stream)
+                data = json.loads(fixedGame.content.decode("utf-8"))
                 data = requests.get(api_link).json()
                 if data["_total"] > 0:
                     self.parse_stream_info(data)

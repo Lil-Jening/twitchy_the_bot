@@ -213,13 +213,14 @@ class livestreams():
         print("Requesting stream info")
         for chunk in chunker(self.config.streams, 100):
             api_link = "https://api.twitch.tv/kraken/streams?client_id={0}".format(clientID)
+            apiList = ""
             print(api_link)
             for stream in chunk:
-                fixedGame = requests.get(api_link, params=stream)
+                apiList += requests.get(api_link, params=stream) + ","
             try:
-                fixedGame = requests.get(api_link, params=stream)
+                fixedList = requests.get(apiList)
                 data = json.loads(fixedGame.content.decode("utf-8"))
-                data = requests.get(api_link).json()
+                print(data)
                 if data["_total"] > 0:
                     self.parse_stream_info(data)
                 else:
